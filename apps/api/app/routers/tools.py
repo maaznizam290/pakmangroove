@@ -80,6 +80,13 @@ def search_ragflow(query: str, location: str | None = None, category: str | None
     return tools.search_ragflow(query, location, category, top_k)
 
 
+@router.get("/rag/sources")
+def list_sources():
+    from mangrove_ai.rag.sources import list_sources as _list_sources
+
+    return _list_sources()
+
+
 @router.get("/visualization/map", response_model=ToolResponse)
 def generate_map(layer: str, aoi_id: str | None = None, bbox: str | None = Query(None)):
     return tools.generate_map(layer, aoi_id, _bbox(bbox))
@@ -98,6 +105,14 @@ def generate_report(aoi_id: str | None = None, bbox: str | None = Query(None), q
 @router.get("/models", response_model=ToolResponse)
 def get_model_metadata(task: str | None = None, version: str | None = None):
     return tools.get_model_metadata(task, version)
+
+
+@router.get("/aoi/default")
+def get_default_aoi():
+    from mangrove_ai.geo import resolve_aoi
+
+    aoi = resolve_aoi()
+    return {"aoi_id": aoi["aoi_id"], "bounds": aoi["bounds"]}
 
 
 @router.post("/hermes/ask", response_model=dict)

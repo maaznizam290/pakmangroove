@@ -17,16 +17,26 @@ from mangrove_ai.change import classify_extent_change
 from mangrove_ai.config import settings
 from mangrove_ai.db import get_session
 from mangrove_ai.gee_client import CompositeRequest, GEENotConfiguredError, gee_client
-from mangrove_ai.geo import ensure_grid_cells, resolve_aoi
+from mangrove_ai.geo import AOITooLargeError, ensure_grid_cells, resolve_aoi
 from mangrove_ai.health import canopy_condition_indicator
 from mangrove_ai.rag import router as rag_router
-from mangrove_ai.risk_evidence import local_risk_evidence
+from mangrove_ai.risk_evidence import local_risk_evidence_batch
 from mangrove_ai.schemas import ToolResponse
 from mangrove_ai.suitability import SuitabilityFeatures, compute_suitability
 
 
 def _aoi_kwargs(aoi_id, bbox):
     return {"aoi_id": aoi_id, "bbox": bbox}
+
+
+def _safe_ensure_grid_cells(bounds) -> tuple[list[dict], str | None]:
+    """Wraps ensure_grid_cells so every tool that needs a materialized grid
+    degrades to an honest limitation message instead of hanging on an
+    oversized AOI (see mangrove_ai.geo.MAX_SYNC_CELLS)."""
+    try:
+        return ensure_grid_cells(bounds), None
+    except AOITooLargeError as e:
+        return [], str(e)
 
 
 def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
@@ -67,7 +77,7 @@ def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
 
 def get_mangrove_map(aoi_id: str | None = None, bbox: tuple | None = None, year: int | None = None) -> ToolResponse:
     aoi = resolve_aoi(aoi_id, bbox)
-    cells = ensure_grid_cells(aoi["bounds"])
+    cells, size_limitation = _safe_ensure_grid_cells(aoi["bounds"])
     cell_ids = [c["cell_id"] for c in cells]
 
     with get_session() as session:
@@ -77,7 +87,7 @@ def get_mangrove_map(aoi_id: str | None = None, bbox: tuple | None = None, year:
             {"cell_ids": cell_ids},
         ).mappings().all()
 
-    limitations = []
+    limitations = [size_limitation] if size_limitation else []
     if not rows:
         limitations.append("No mangrove_probability_cells rows for this AOI yet — the RF/GBM classifier has not been run against real ingested imagery for this area.")
 
@@ -145,7 +155,7 @@ def query_gbif(aoi_id: str | None = None, bbox: tuple | None = None, species: st
 
 def query_cgmd(aoi_id: str | None = None, bbox: tuple | None = None, year: int | None = None) -> ToolResponse:
     aoi = resolve_aoi(aoi_id, bbox)
-    cells = ensure_grid_cells(aoi["bounds"])
+    cells, size_limitation = _safe_ensure_grid_cells(aoi["bounds"])
     cell_ids = [c["cell_id"] for c in cells]
     with get_session() as session:
         extent_rows = session.execute(
@@ -157,7 +167,7 @@ def query_cgmd(aoi_id: str | None = None, bbox: tuple | None = None, year: int |
             {"cids": cell_ids, "year": year},
         ).mappings().all()
 
-    limitations = []
+    limitations = [size_limitation] if size_limitation else []
     if not extent_rows and not afcc_rows:
         limitations.append("No CGMD-Extent30/AFCC30 rows ingested for this AOI yet. Note: CGMD_AFCC_ASSET_ID must be independently confirmed before use — 'CGMD-AFCC305' is not assumed valid (see mangrove_ai.config).")
 
@@ -195,7 +205,7 @@ def calculate_change(aoi_id: str | None = None, bbox: tuple | None = None,
 
 def calculate_health_indicators(aoi_id: str | None = None, bbox: tuple | None = None, year: int | None = None) -> ToolResponse:
     aoi = resolve_aoi(aoi_id, bbox)
-    cells = ensure_grid_cells(aoi["bounds"])
+    cells, size_limitation = _safe_ensure_grid_cells(aoi["bounds"])
     cell_ids = [c["cell_id"] for c in cells]
 
     with get_session() as session:
@@ -206,9 +216,10 @@ def calculate_health_indicators(aoi_id: str | None = None, bbox: tuple | None = 
         ).mappings().all()
 
     if not rows:
+        limitations = [size_limitation] if size_limitation else ["No spectral_index_values ingested for this AOI yet — requires a materialized Sentinel-2 composite."]
         return ToolResponse(
             data=None, source=["mangrove_ai.health"], parameters={**_aoi_kwargs(aoi_id, bbox), "year": year},
-            limitations=["No spectral_index_values ingested for this AOI yet — requires a materialized Sentinel-2 composite."],
+            limitations=limitations,
         )
 
     by_cell: dict[int, dict[str, float]] = {}
@@ -238,7 +249,13 @@ def calculate_restoration_suitability(aoi_id: str | None = None, bbox: tuple | N
     Sentinel-2 + CGMD + GMW data is materialized for the AOI.
     """
     aoi = resolve_aoi(aoi_id, bbox)
-    cells = ensure_grid_cells(aoi["bounds"])
+    cells, size_limitation = _safe_ensure_grid_cells(aoi["bounds"])
+    if size_limitation:
+        return ToolResponse(
+            data={"run_id": None, "cells": []}, source=["mangrove_ai.suitability"],
+            parameters=_aoi_kwargs(aoi_id, bbox), model_version="suitability-rules-v0.1.0",
+            limitations=[size_limitation],
+        )
     cell_ids = [c["cell_id"] for c in cells]
     model_version = "suitability-rules-v0.1.0"
 
@@ -271,6 +288,13 @@ def calculate_restoration_suitability(aoi_id: str | None = None, bbox: tuple | N
             {"aoi_id": aoi["aoi_id"], "feature_set": '{"note":"see suitability_cells.data_sources per cell"}', "model_version": model_version},
         ).scalar()
 
+    # Batched once for the whole AOI rather than per cell — a per-cell DB
+    # round trip here (or for the suitability_cells insert below) made a
+    # several-thousand-cell AOI take 10+ seconds for what should be one
+    # join and one bulk insert.
+    risk_cell_ids = local_risk_evidence_batch([c["cell_id"] for c in cells])
+    rows_to_insert: list[dict] = []
+
     for cell in cells:
         cid = cell["cell_id"]
         idx = indices_by_cell.get(cid, {})
@@ -292,28 +316,33 @@ def calculate_restoration_suitability(aoi_id: str | None = None, bbox: tuple | N
         result = compute_suitability(features)
         sources_used.update(result.data_sources)
 
-        risk = local_risk_evidence(cell["lon"], cell["lat"])
+        has_risk_evidence = cid in risk_cell_ids
 
         if run_id and result.classification != "EXCLUDED":
-            with get_session() as session:
-                session.execute(
-                    text("""INSERT INTO suitability_cells (run_id, cell_id, suitability_score, confidence, classification,
-                                reason_codes, data_sources, model_version, local_ecological_risk_evidence)
-                             VALUES (:run_id, :cell_id, :score, :confidence, :classification, :reasons, :sources, :model_version, :risk)
-                             ON CONFLICT (run_id, cell_id) DO NOTHING"""),
-                    {"run_id": run_id, "cell_id": cid, "score": result.suitability_score, "confidence": result.confidence,
-                     "classification": result.classification, "reasons": result.reason_codes, "sources": result.data_sources,
-                     "model_version": model_version, "risk": risk["has_evidence"]},
-                )
+            rows_to_insert.append({
+                "run_id": run_id, "cell_id": cid, "score": result.suitability_score, "confidence": result.confidence,
+                "classification": result.classification, "reasons": result.reason_codes, "sources": result.data_sources,
+                "model_version": model_version, "risk": has_risk_evidence,
+            })
 
         results.append({
             "cell_id": cid, "lon": cell["lon"], "lat": cell["lat"],
             "suitability_score": result.suitability_score, "confidence": result.confidence,
             "classification": result.classification, "reason_codes": result.reason_codes,
             "data_sources": result.data_sources, "model_version": model_version,
-            "local_ecological_risk_evidence": risk["has_evidence"],
+            "local_ecological_risk_evidence": has_risk_evidence,
             "field_validation_label": result.field_validation_label,
         })
+
+    if rows_to_insert:
+        with get_session() as session:
+            session.execute(
+                text("""INSERT INTO suitability_cells (run_id, cell_id, suitability_score, confidence, classification,
+                            reason_codes, data_sources, model_version, local_ecological_risk_evidence)
+                         VALUES (:run_id, :cell_id, :score, :confidence, :classification, :reasons, :sources, :model_version, :risk)
+                         ON CONFLICT (run_id, cell_id) DO NOTHING"""),
+                rows_to_insert,
+            )
 
     limitations = []
     if not mangrove_prob and not historical and not indices_by_cell:

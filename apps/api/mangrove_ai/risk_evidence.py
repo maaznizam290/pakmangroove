@@ -25,6 +25,28 @@ _NEARBY_SAMPLES_SQL = text("""
 """)
 
 
+_BATCH_NEARBY_SQL = text("""
+    SELECT DISTINCT g.cell_id
+    FROM grid_cells g
+    JOIN ecological_risk_samples s
+      ON ST_DWithin(g.centroid::geography, s.geom::geography, :radius_m)
+    WHERE g.cell_id = ANY(:cell_ids)
+""")
+
+
+def local_risk_evidence_batch(cell_ids: list[int], radius_m: float | None = None) -> set[int]:
+    """One-query version of local_risk_evidence for scoring a whole AOI —
+    used by calculate_restoration_suitability instead of a per-cell round
+    trip. Returns the subset of cell_ids within radius_m of any actually
+    sampled ecological_risk_samples point."""
+    if not cell_ids:
+        return set()
+    radius_m = radius_m if radius_m is not None else settings.ecological_risk_proximity_m
+    with get_session() as session:
+        rows = session.execute(_BATCH_NEARBY_SQL, {"cell_ids": cell_ids, "radius_m": radius_m}).mappings().all()
+    return {r["cell_id"] for r in rows}
+
+
 def local_risk_evidence(lon: float, lat: float, radius_m: float | None = None) -> dict:
     """Returns {"flag": bool, "samples": [...]}. `samples` lists the actual
     nearby sampled rows (each still tied to its own coordinates/metal/Igeo)

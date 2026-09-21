@@ -12,6 +12,24 @@ from mangrove_ai.db import get_session
 
 _METERS_PER_DEGREE_LAT = 111_320.0
 
+# Synchronous grid materialization (ST_SquareGrid + per-cell INSERT) is
+# only viable up to a few thousand cells — the full seeded Karachi AOI at
+# 30m resolution is ~2M cells and would hang the request indefinitely.
+# Matches the "BBOX size limit" / async-job design in
+# docs/architecture/PAKMANG_AI_MVP_ENGINEERING_SPEC.md §3.1, simplified for
+# this MVP to a hard cap with a clear error rather than a background job
+# queue: draw a smaller AOI instead of waiting on an unbounded query.
+MAX_SYNC_CELLS = 10_000
+
+
+class AOITooLargeError(ValueError):
+    def __init__(self, estimated_cells: int):
+        self.estimated_cells = estimated_cells
+        super().__init__(
+            f"AOI would materialize ~{estimated_cells:,} cells at {settings.grid_cell_size_m}m resolution, "
+            f"over the {MAX_SYNC_CELLS:,}-cell synchronous limit. Draw a smaller AOI or zoom in."
+        )
+
 
 def _degrees_for_cell_size(lat: float) -> float:
     import math
@@ -68,10 +86,16 @@ _SELECT_CELLS_SQL = text("""
 
 def ensure_grid_cells(bounds: tuple[float, float, float, float]) -> list[dict]:
     """Materializes (idempotently) grid cells covering `bounds` and returns
-    every cell (existing + newly created) with its id and centroid."""
+    every cell (existing + newly created) with its id and centroid.
+    Raises AOITooLargeError before touching the DB if the estimated cell
+    count exceeds MAX_SYNC_CELLS."""
     x0, y0, x1, y1 = bounds
     mid_lat = (y0 + y1) / 2
     deg_size = _degrees_for_cell_size(mid_lat)
+
+    estimated_cells = int(((x1 - x0) / deg_size) * ((y1 - y0) / deg_size))
+    if estimated_cells > MAX_SYNC_CELLS:
+        raise AOITooLargeError(estimated_cells)
 
     with get_session() as session:
         session.execute(_MATERIALIZE_SQL, {"deg_size": deg_size, "x0": x0, "y0": y0, "x1": x1, "y1": y1, "cell_size_m": settings.grid_cell_size_m})
