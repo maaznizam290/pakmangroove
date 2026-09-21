@@ -1,0 +1,40 @@
+# Core API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Database
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+geoalchemy2==0.16.0
+
+# Geospatial
+geopandas==1.0.1
+shapely==2.0.6
+rasterio==1.4.3
+
+# Earth Engine (credential-gated; see mangrove_ai/gee_client.py)
+earthengine-api==1.4.6
+
+# ML
+scikit-learn==1.6.0
+numpy==2.2.1
+pandas==2.2.3
+joblib==1.4.2
+
+# RAG fallback (TF-IDF/BM25 hybrid retrieval — HF Hub is blocked in the
+# sandbox, so this avoids requiring a downloaded dense-embedding model;
+# swap for sentence-transformers/RAGFlow's own embedding model in
+# production where the model hub is reachable)
+rank-bm25==0.2.2
+
+# MCP
+mcp==1.2.0
+
+# HTTP client (RAGFlow API, GBIF API)
+httpx==0.28.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0

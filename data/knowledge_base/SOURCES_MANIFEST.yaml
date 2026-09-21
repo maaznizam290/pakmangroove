@@ -1,0 +1,214 @@
+# Mangrove_AI_Knowledge — source registry
+#
+# Single source of truth for every document the RAG layer (RAGFlow in
+# production, pgvector fallback in the sandbox) is allowed to cite. The
+# ingestion pipeline (mangrove_ai.rag.ingest) reads this file, and refuses
+# to index anything not listed here with a matching checksum — this is the
+# enforcement point for "never invent dataset values / never cite an
+# unindexed source."
+#
+# status values:
+#   not_yet_uploaded   — external source we could not fetch from this
+#                        sandbox (arXiv/Zenodo/DOI resolvers/Kaggle are
+#                        blocked by the sandbox's egress policy); waiting
+#                        on the user to upload the file.
+#   needs_validation    — user flagged the identifier itself as possibly
+#                        wrong; do not ingest or cite until confirmed.
+#   ingested            — file present under data/knowledge_base/<category>/
+#                        and indexed into the KB.
+#
+# Every field below is exactly as supplied by the user or the source's own
+# public identifier (DOI/arXiv ID/URL). Nothing here is inferred content —
+# only the paper/dataset's existence and bibliographic pointer.
+
+- id: arxiv-2411.11918
+  category: 04_Sentinel2_Remote_Sensing
+  title: "Artificial Intelligence Mangrove Monitoring System Based on Deep Learning and Sentinel-2 Satellite Data in the UAE (2017-2024)"
+  authors: "unknown — to be filled from the paper's own metadata at ingestion"
+  year: null
+  doi: null
+  arxiv_id: "2411.11918"
+  source_url: "https://arxiv.org/abs/2411.11918"
+  usage: "Methodological reference: Sentinel-2 preprocessing, mangrove segmentation, GMW-derived labels, UNet++ architecture, training strategy."
+  license: "unknown — check arXiv non-exclusive license on the paper page at ingestion"
+  status: not_yet_uploaded
+
+- id: wwf-manglaria
+  category: 05_Mangrove_Restoration
+  title: "WWF ManglarIA"
+  authors: "WWF"
+  year: null
+  doi: null
+  source_url: "unknown — provide the specific ManglarIA reference page/report the user intends"
+  usage: "Product/concept reference for AI + environmental monitoring design patterns. Not a data source — no quantitative values are drawn from this entry."
+  license: "unknown"
+  status: not_yet_uploaded
+
+- id: zenodo-10.5281-zenodo.10732690
+  category: 08_Dataset_Documentation
+  title: "Mangrove Cover Dataset of Pakistan on 5-Year Interval (1990-2020) at 30m Spatial Resolution"
+  authors: "unknown — to be filled from the Zenodo record at ingestion"
+  year: null
+  doi: "10.5281/zenodo.10732690"
+  source_url: "https://zenodo.org/records/10732690"
+  usage: "Primary Pakistan training-label source. For the Karachi MVP, prioritize the Indus Delta subset, Sandspit subset, and MangroveSitesShapefile within this dataset."
+  dataset_priority: ["Indus Delta", "Sandspit", "MangroveSitesShapefile"]
+  location: "Pakistan coastline"
+  resolution_m: 30
+  label_quality_note: "30 m resolution — treat as weak/coarse labels relative to 10 m Sentinel-2 pixels; do not assume automatic pixel-level correctness. Cross-reference in 02_Pakistan_Mangrove_Research."
+  license: "unknown — check Zenodo record at ingestion"
+  status: not_yet_uploaded
+
+- id: tandf-10.1080-24749508.2026.2640688
+  category: 02_Pakistan_Mangrove_Research
+  title: "unknown — to be filled from the paper's own metadata at ingestion"
+  authors: "unknown"
+  year: 2026
+  doi: "10.1080/24749508.2026.2640688"
+  source_url: "https://doi.org/10.1080/24749508.2026.2640688"
+  usage: "Scientific reference: Sentinel-2 multi-index monitoring, Random Forest classification, and predictive modeling in Pakistan."
+  license: "unknown"
+  status: not_yet_uploaded
+
+- id: sciencedirect-10.1016-j.ecolind.2025.113837
+  category: 03_Karachi_Indus_Delta
+  title: "unknown — to be filled from the paper's own metadata at ingestion"
+  authors: "unknown"
+  year: 2025
+  doi: "10.1016/j.ecolind.2025.113837"
+  source_url: "https://doi.org/10.1016/j.ecolind.2025.113837"
+  usage: "Historical Indus Delta reference."
+  license: "unknown"
+  status: not_yet_uploaded
+
+- id: frontiers-10.3389-fenvs.2024.1416450
+  category: 04_Sentinel2_Remote_Sensing
+  title: "unknown — to be filled from the paper's own metadata at ingestion"
+  authors: "unknown"
+  year: 2024
+  doi: "10.3389/fenvs.2024.1416450"
+  source_url: "https://doi.org/10.3389/fenvs.2024.1416450"
+  usage: "Sentinel-2 Pakistan preprocessing, health, and change-analysis reference."
+  license: "unknown"
+  status: not_yet_uploaded
+
+- id: springer-10.1007-s11852-022-00873-4
+  category: 07_Ecological_Risk
+  title: "unknown — to be filled from the paper's own metadata at ingestion"
+  authors: "unknown"
+  year: 2022
+  doi: "10.1007/s11852-022-00873-4"
+  source_url: "https://doi.org/10.1007/s11852-022-00873-4"
+  usage: "Environmental-factor evidence, especially pH, salinity, EC, SAR, and ESP."
+  license: "unknown"
+  status: needs_validation
+  validation_note: >
+    The user flagged that an originally supplied DOI ending in "-6" appears
+    incorrect and supplied this "-4" variant instead. This sandbox's egress
+    policy blocks doi.org and springer.com, so the identifier could not be
+    independently resolved/verified here. DO NOT ingest or cite this source
+    until a human confirms the DOI resolves to the intended paper (title,
+    authors, and pH/salinity/EC/SAR/ESP content match).
+
+- id: gmw
+  category: 01_Global_Mangrove_Research
+  title: "Global Mangrove Watch"
+  authors: "Global Mangrove Watch consortium"
+  year: null
+  doi: null
+  source_url: "https://globalmangrovewatch.org"
+  usage: "Independent mangrove extent/change reference and validation layer (baseline vectors consumed directly by the geospatial pipeline, per docs/architecture/PAKMANG_AI_MVP_ENGINEERING_SPEC.md; methodology documentation indexed here for RAG citation)."
+  license: "unknown — check GMW terms of use at ingestion"
+  status: not_yet_uploaded
+
+- id: kaggle-mangrove-species
+  category: 06_Species_Biodiversity
+  title: "Kaggle mangrove-species dataset"
+  authors: "unknown — Kaggle dataset author, to be filled at ingestion"
+  year: null
+  doi: null
+  source_url: "unknown — provide the specific Kaggle dataset slug the user intends"
+  usage: "Secondary species dataset only. Schema and provenance must be inspected before use; GBIF and peer-reviewed literature take precedence over this source in any conflict."
+  precedence: secondary
+  license: "unknown — check Kaggle dataset license at ingestion"
+  status: not_yet_uploaded
+
+- id: kaggle-pakistan-geospatial
+  category: 08_Dataset_Documentation
+  title: "Kaggle Pakistan geospatial admin/rivers/roads dataset"
+  authors: "unknown — Kaggle dataset author, to be filled at ingestion"
+  year: null
+  doi: null
+  source_url: "unknown — provide the specific Kaggle dataset slug the user intends"
+  usage: "Optional spatial context/constraint data (admin boundaries, rivers, roads) for exclusion-layer construction in the suitability model. Schema must be inspected before use."
+  precedence: optional_context
+  license: "unknown — check Kaggle dataset license at ingestion"
+  status: not_yet_uploaded
+
+- id: bundal-island-ecotoxicology
+  category: 07_Ecological_Risk
+  title: "Bundal Island Ecotoxicological Study (user-provided)"
+  authors: "unknown — to be filled from the PDF at ingestion"
+  year: null
+  doi: null
+  source_url: "user-provided PDF, not a public URL"
+  usage: >
+    Karachi/Bundal scientific context and ecological-risk evidence — Igeo,
+    BCF, TF, and heavy-metal (Fe, Cr, Mn, Zn, Pb) sampling results. Values
+    stay attached to their actual sampling location/context; never
+    interpolated into a continuous Karachi-wide pollution raster. Any
+    restoration-suitability cell inside or near the study's sampled
+    locations gets a "LOCAL_ECOLOGICAL_RISK_EVIDENCE_AVAILABLE" flag,
+    never a citywide pollution score.
+  license: "unknown — check with the study's rights holder before redistribution"
+  status: not_yet_uploaded
+
+- id: gee-copernicus-s2-sr-harmonized
+  category: 04_Sentinel2_Remote_Sensing
+  title: "COPERNICUS/S2_SR_HARMONIZED (Google Earth Engine)"
+  authors: "Copernicus / ESA, harmonized by Google Earth Engine"
+  year: null
+  doi: null
+  source_url: "https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED"
+  usage: "Primary current/recent Sentinel-2 surface reflectance source for the imagery pipeline. Documentation entry only — imagery itself is queried live via Earth Engine, never stored in the RAG corpus."
+  license: "See Copernicus/ESA open data license"
+  status: not_yet_uploaded
+
+- id: gee-copernicus-s2-cloud-probability
+  category: 04_Sentinel2_Remote_Sensing
+  title: "COPERNICUS/S2_CLOUD_PROBABILITY (Google Earth Engine)"
+  authors: "Copernicus / ESA / sentinel-hub s2cloudless, hosted by Google Earth Engine"
+  year: null
+  doi: null
+  source_url: "https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY"
+  usage: "Cloud probability masking companion to S2_SR_HARMONIZED."
+  license: "See Copernicus/ESA open data license"
+  status: not_yet_uploaded
+
+- id: cgmd-extent30
+  category: 08_Dataset_Documentation
+  title: "CGMD-Extent30 (Earth Engine asset projects/mangrovedatahub2_assets/CGMD-Extent30SO)"
+  authors: "unknown — CGMD dataset authors, to be filled at ingestion"
+  year: null
+  doi: null
+  source_url: "unknown — provide CGMD's own documentation/paper URL if available"
+  usage: "Annual mangrove extent, 1984-2023, primary source for the temporal extent time series and change detection."
+  license: "unknown"
+  status: not_yet_uploaded
+
+- id: cgmd-afcc30
+  category: 08_Dataset_Documentation
+  title: "CGMD-AFCC30 (Earth Engine asset — annual fractional canopy cover, 1984-2023)"
+  authors: "unknown — CGMD dataset authors, to be filled at ingestion"
+  year: null
+  doi: null
+  source_url: "unknown — provide CGMD's own documentation/paper URL if available"
+  usage: "Annual fractional canopy cover for canopy-dynamics/health analysis."
+  license: "unknown"
+  status: not_yet_uploaded
+  asset_id_note: >
+    Per the build instructions: do not use "CGMD-AFCC305" unless that
+    asset is independently verified to exist. This registry uses the
+    dataset name "CGMD-AFCC30" and the concrete Earth Engine asset ID must
+    be confirmed against the CGMD data hub before the GEE client config
+    (apps/api/mangrove_ai/gee_client.py) is pointed at it.
