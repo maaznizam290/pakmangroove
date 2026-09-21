@@ -1,0 +1,79 @@
+"""AOI resolution and on-demand grid materialization. grid_cells starts
+empty — cells are generated the first time an AOI is queried, snapped to
+a fixed grid so repeated queries over overlapping areas reuse the same
+cell_ids (see cell_key)."""
+
+from __future__ import annotations
+
+from sqlalchemy import text
+
+from mangrove_ai.config import settings
+from mangrove_ai.db import get_session
+
+_METERS_PER_DEGREE_LAT = 111_320.0
+
+
+def _degrees_for_cell_size(lat: float) -> float:
+    import math
+
+    return settings.grid_cell_size_m / (_METERS_PER_DEGREE_LAT * max(0.1, math.cos(math.radians(lat))))
+
+
+_RESOLVE_AOI_SQL = text("SELECT ST_AsGeoJSON(geom) AS geojson, ST_XMin(geom) x0, ST_YMin(geom) y0, ST_XMax(geom) x1, ST_YMax(geom) y1 FROM aois WHERE aoi_id = :aoi_id")
+_DEFAULT_AOI_SQL = text("SELECT aoi_id, ST_AsGeoJSON(geom) AS geojson, ST_XMin(geom) x0, ST_YMin(geom) y0, ST_XMax(geom) x1, ST_YMax(geom) y1 FROM aois WHERE is_default LIMIT 1")
+
+
+def resolve_aoi(aoi_id: str | None = None, bbox: tuple[float, float, float, float] | None = None) -> dict:
+    """Returns {"aoi_id": str|None, "geojson": dict, "bounds": (x0,y0,x1,y1)}.
+    Exactly one of aoi_id/bbox should be given; if neither, falls back to
+    the seeded default Karachi AOI."""
+    with get_session() as session:
+        if aoi_id:
+            row = session.execute(_RESOLVE_AOI_SQL, {"aoi_id": aoi_id}).mappings().first()
+            if not row:
+                raise ValueError(f"No AOI found with aoi_id={aoi_id}")
+            return {"aoi_id": aoi_id, "bounds": (row["x0"], row["y0"], row["x1"], row["y1"]), "geojson_str": row["geojson"]}
+        if bbox:
+            x0, y0, x1, y1 = bbox
+            geojson = session.execute(text("SELECT ST_AsGeoJSON(ST_MakeEnvelope(:x0,:y0,:x1,:y1,4326)) AS g"),
+                                       {"x0": x0, "y0": y0, "x1": x1, "y1": y1}).scalar()
+            return {"aoi_id": None, "bounds": bbox, "geojson_str": geojson}
+        row = session.execute(_DEFAULT_AOI_SQL).mappings().first()
+        if not row:
+            raise ValueError("No default AOI seeded — run db/migrations/099_seed_karachi_aoi.sql")
+        return {"aoi_id": str(row["aoi_id"]), "bounds": (row["x0"], row["y0"], row["x1"], row["y1"]), "geojson_str": row["geojson"]}
+
+
+_MATERIALIZE_SQL = text("""
+    WITH grid AS (
+        SELECT (ST_SquareGrid(:deg_size, ST_MakeEnvelope(:x0, :y0, :x1, :y1, 4326))).geom AS geom
+    ),
+    keyed AS (
+        SELECT geom,
+               'S' || :cell_size_m || '-' || round(ST_X(ST_Centroid(geom))::numeric, 6) || '-' || round(ST_Y(ST_Centroid(geom))::numeric, 6) AS cell_key
+        FROM grid
+    )
+    INSERT INTO grid_cells (cell_key, geom, centroid, cell_size_m)
+    SELECT cell_key, geom, ST_Centroid(geom), :cell_size_m FROM keyed
+    ON CONFLICT (cell_key) DO NOTHING
+    RETURNING cell_id
+""")
+
+_SELECT_CELLS_SQL = text("""
+    SELECT cell_id, ST_X(centroid) AS lon, ST_Y(centroid) AS lat
+    FROM grid_cells
+    WHERE ST_Intersects(geom, ST_MakeEnvelope(:x0, :y0, :x1, :y1, 4326))
+""")
+
+
+def ensure_grid_cells(bounds: tuple[float, float, float, float]) -> list[dict]:
+    """Materializes (idempotently) grid cells covering `bounds` and returns
+    every cell (existing + newly created) with its id and centroid."""
+    x0, y0, x1, y1 = bounds
+    mid_lat = (y0 + y1) / 2
+    deg_size = _degrees_for_cell_size(mid_lat)
+
+    with get_session() as session:
+        session.execute(_MATERIALIZE_SQL, {"deg_size": deg_size, "x0": x0, "y0": y0, "x1": x1, "y1": y1, "cell_size_m": settings.grid_cell_size_m})
+        rows = session.execute(_SELECT_CELLS_SQL, {"x0": x0, "y0": y0, "x1": x1, "y1": y1}).mappings().all()
+    return [dict(r) for r in rows]

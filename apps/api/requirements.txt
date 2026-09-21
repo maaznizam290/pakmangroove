@@ -3,6 +3,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
+pyyaml==6.0.2
 
 # Database
 sqlalchemy==2.0.36
@@ -23,18 +24,20 @@ numpy==2.2.1
 pandas==2.2.3
 joblib==1.4.2
 
-# RAG fallback (TF-IDF/BM25 hybrid retrieval — HF Hub is blocked in the
-# sandbox, so this avoids requiring a downloaded dense-embedding model;
-# swap for sentence-transformers/RAGFlow's own embedding model in
-# production where the model hub is reachable)
-rank-bm25==0.2.2
+# RAG
+ragflow-sdk==0.22.1     # official client — see mangrove_ai/rag/ragflow_client.py
+pypdf==6.19.0            # PDF text/page extraction for ingestion (both RAGFlow and fallback paths)
+rank-bm25==0.2.2         # sandbox fallback hybrid retrieval — HF Hub is blocked here, so this
+                          # avoids requiring a downloaded dense-embedding model; production
+                          # RAGFlow deployment uses its own configured embedding model instead
 
 # MCP
 mcp==1.2.0
 
-# HTTP client (RAGFlow API, GBIF API)
+# HTTP client (GBIF API, etc.)
 httpx==0.28.1
 
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.0
+anthropic==0.68.0    # only imported when ANTHROPIC_API_KEY is set — see mangrove_ai/hermes/orchestrator.py
