@@ -36,7 +36,7 @@ def list_review_queue(status: str = "pending") -> list[dict]:
                      WHERE r.status = :status ORDER BY r.created_at"""),
             {"status": status},
         ).mappings().all()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "review_id": str(r["review_id"])} for r in rows]
 
 
 def validate_review(review_id: str, label_class: str, validated_by: str) -> None:
