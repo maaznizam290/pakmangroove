@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, type ToolResponse } from "@/lib/api";
 import LimitationsNotice from "@/components/LimitationsNotice";
+import ErrorBanner from "@/components/ErrorBanner";
 
 interface GbifRow {
   occurrence_id: string;
@@ -13,9 +14,10 @@ interface GbifRow {
 
 export default function SpeciesExplorerPage() {
   const [resp, setResp] = useState<ToolResponse<GbifRow[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.defaultAoi().then((aoi) => api.gbif(aoi.bounds)).then(setResp as never);
+    api.defaultAoi().then((aoi) => api.gbif(aoi.bounds)).then(setResp as never).catch((e) => setError(String(e)));
   }, []);
 
   const rows = resp?.data || [];
@@ -30,6 +32,7 @@ export default function SpeciesExplorerPage() {
         </p>
       </div>
 
+      <ErrorBanner message={error} />
       {resp && <LimitationsNotice limitations={resp.limitations} />}
 
       {rows.length > 0 ? (

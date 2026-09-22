@@ -80,6 +80,20 @@ def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
         )
     except GEENotConfiguredError as e:
         return ToolResponse(data=None, source=[settings.s2_sr_collection], parameters=params, limitations=[str(e)])
+    except AOITooLargeError as e:
+        return ToolResponse(data=None, source=[settings.s2_sr_collection], parameters=params, limitations=[str(e)])
+    except Exception as e:
+        # A live Earth Engine call (build_annual_composite / sample_bands_at_cells)
+        # can fail for many real operational reasons — a bad/renamed asset id, an
+        # EE quota or timeout, a transient network error. That is an honest
+        # limitation to report, not a reason to 500 the whole request: this
+        # tool's contract (like every other tool here) is to say what actually
+        # happened rather than crash, per the same convention _safe_ensure_grid_cells
+        # follows for an oversized AOI.
+        return ToolResponse(
+            data=None, source=[settings.s2_sr_collection, settings.s2_cloud_prob_collection], parameters=params,
+            limitations=[f"Live Sentinel-2 query failed: {type(e).__name__}: {e}"],
+        )
 
 
 def get_mangrove_map(aoi_id: str | None = None, bbox: tuple | None = None, year: int | None = None) -> ToolResponse:

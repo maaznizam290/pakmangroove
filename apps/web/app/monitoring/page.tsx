@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import LimitationsNotice from "@/components/LimitationsNotice";
+import ErrorBanner from "@/components/ErrorBanner";
 
 interface ModelRow {
   model_id: string;
@@ -27,14 +28,19 @@ interface ReviewRow {
 export default function MonitoringPage() {
   const [models, setModels] = useState<ModelRow[]>([]);
   const [modelLimitations, setModelLimitations] = useState<string[]>([]);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [queue, setQueue] = useState<ReviewRow[]>([]);
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.models().then((r) => {
-      setModels(r.data as ModelRow[]);
-      setModelLimitations(r.limitations);
-    });
-    api.reviewQueue<ReviewRow>().then(setQueue);
+    api
+      .models()
+      .then((r) => {
+        setModels(r.data as ModelRow[]);
+        setModelLimitations(r.limitations);
+      })
+      .catch((e) => setModelError(String(e)));
+    api.reviewQueue<ReviewRow>().then(setQueue).catch((e) => setQueueError(String(e)));
   }, []);
 
   return (
@@ -49,6 +55,7 @@ export default function MonitoringPage() {
 
       <div className="space-y-2">
         <h2 className="text-sm font-medium text-neutral-300 mb-2">Model registry</h2>
+        <ErrorBanner message={modelError} />
         <LimitationsNotice limitations={modelLimitations} />
         {models.length ? (
           <table className="w-full text-sm border-collapse">
@@ -87,6 +94,7 @@ export default function MonitoringPage() {
 
       <div>
         <h2 className="text-sm font-medium text-neutral-300 mb-2">Review queue (pending)</h2>
+        <ErrorBanner message={queueError} />
         {queue.length ? (
           <ul className="space-y-2">
             {queue.map((q) => (

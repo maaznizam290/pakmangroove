@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { api } from "@/lib/api";
 import LimitationsNotice from "@/components/LimitationsNotice";
+import ErrorBanner from "@/components/ErrorBanner";
 
 interface YearRow {
   year: number;
@@ -17,6 +18,7 @@ export default function TimelinePage() {
   const [rows, setRows] = useState<YearRow[]>([]);
   const [limitations, setLimitations] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.defaultAoi()
@@ -25,7 +27,8 @@ export default function TimelinePage() {
         setRows(resp.data || []);
         setLimitations(resp.limitations);
         setLoaded(true);
-      });
+      })
+      .catch((e) => setError(String(e)));
   }, []);
 
   return (
@@ -35,6 +38,7 @@ export default function TimelinePage() {
         <p className="text-neutral-400 text-sm mt-1">Annual mangrove extent, gain, and loss (CGMD-Extent30, 1984–2023). OBSERVED / DERIVED, never a forecast.</p>
       </div>
 
+      <ErrorBanner message={error} />
       <LimitationsNotice limitations={limitations} />
 
       {rows.length > 0 ? (

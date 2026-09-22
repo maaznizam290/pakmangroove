@@ -3,16 +3,21 @@
 import { useState } from "react";
 import { api, type Bbox, type NamedAoi, type ToolResponse } from "@/lib/api";
 import LimitationsNotice from "@/components/LimitationsNotice";
+import ErrorBanner from "@/components/ErrorBanner";
 import AoiSelector from "@/components/AoiSelector";
 
 export default function SatelliteExplorerPage() {
   const [resp, setResp] = useState<ToolResponse | null>(null);
   const [aoi, setAoi] = useState<NamedAoi | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const handleAoiChange = (bounds: Bbox, selected: NamedAoi | null) => {
     setAoi(selected);
     setResp(null);
-    api.sentinel(bounds).then(setResp);
+    setError(null);
+    setLoading(true);
+    api.sentinel(bounds).then(setResp).catch((e) => setError(String(e))).finally(() => setLoading(false));
   };
 
   return (
@@ -28,6 +33,9 @@ export default function SatelliteExplorerPage() {
         </div>
         <AoiSelector onChange={handleAoiChange} />
       </div>
+
+      {loading && <div className="text-neutral-500 text-sm">Querying Sentinel-2 (a live composite build + per-cell sample can take a while for a large AOI)…</div>}
+      <ErrorBanner message={error} />
 
       {resp && (
         <>

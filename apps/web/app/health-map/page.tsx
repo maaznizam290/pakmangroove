@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, type Bbox, type NamedAoi, type ToolResponse } from "@/lib/api";
 import LimitationsNotice from "@/components/LimitationsNotice";
+import ErrorBanner from "@/components/ErrorBanner";
 import AoiSelector from "@/components/AoiSelector";
 
 interface ConditionRow {
@@ -16,11 +17,13 @@ interface ConditionRow {
 export default function HealthMapPage() {
   const [resp, setResp] = useState<ToolResponse<ConditionRow[]> | null>(null);
   const [aoi, setAoi] = useState<NamedAoi | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleAoiChange = (bounds: Bbox, selected: NamedAoi | null) => {
     setAoi(selected);
     setResp(null);
-    api.healthIndicators(bounds).then(setResp as never);
+    setError(null);
+    api.healthIndicators(bounds).then(setResp as never).catch((e) => setError(String(e)));
   };
 
   const rows = (resp?.data as ConditionRow[] | null) || [];
@@ -39,6 +42,7 @@ export default function HealthMapPage() {
         <AoiSelector onChange={handleAoiChange} />
       </div>
 
+      <ErrorBanner message={error} />
       {resp && <LimitationsNotice limitations={resp.limitations} />}
 
       {resp && rows.length > 0 && (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import ErrorBanner from "@/components/ErrorBanner";
 
 interface SourceRow {
   id: string;
@@ -22,9 +23,10 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function EvidencePage() {
   const [rows, setRows] = useState<SourceRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.ragSources<SourceRow>().then(setRows);
+    api.ragSources<SourceRow>().then(setRows).catch((e) => setError(String(e)));
   }, []);
 
   const byCategory = rows.reduce<Record<string, SourceRow[]>>((acc, r) => {
@@ -41,6 +43,8 @@ export default function EvidencePage() {
           nothing not listed here is ever cited.
         </p>
       </div>
+
+      <ErrorBanner message={error} />
 
       {Object.entries(byCategory).sort().map(([category, sources]) => (
         <div key={category}>
