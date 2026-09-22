@@ -18,11 +18,22 @@ class Settings(BaseSettings):
     gee_service_account_key_path: str | None = None
     gee_project: str | None = None
 
-    # Per build instructions: do not assume "CGMD-AFCC305" exists. This
-    # must be confirmed against the CGMD data hub before use; left unset
-    # by default so misconfiguration fails loudly instead of silently
+    # The original spec'd path (projects/mangrovedatahub2_assets/CGMD-Extent30SO)
+    # was confirmed NOT accessible from a real GEE project (live query,
+    # Sept 2026). This value instead comes from Google's own Earth Engine
+    # Data Catalog listing + matching Zenodo records for the "Continuous
+    # Global Mangrove Dynamics" dataset (Zhang et al.) — see
+    # data/knowledge_base/SOURCES_MANIFEST.yaml (cgmd-extent30) for the
+    # search provenance. Not confirmed by directly fetching the catalog
+    # page (blocked by this sandbox's network policy) — run one live
+    # ee.data.getInfo() call to fully confirm before treating as final.
+    cgmd_extent_asset_id: str = "projects/mangrovedatahub2/assets/CGMD-Extent30"
+    # Per build instructions: do not assume "CGMD-AFCC305" exists. Web
+    # search suggests projects/mangrovedatahub2/assets/CGMD-AFCC30 (see
+    # SOURCES_MANIFEST.yaml, cgmd-afcc30) but that is NOT independently
+    # live-confirmed the way CGMD-Extent30's old id was proven broken —
+    # left unset so misconfiguration fails loudly instead of silently
     # querying a possibly-nonexistent asset.
-    cgmd_extent_asset_id: str = "projects/mangrovedatahub2_assets/CGMD-Extent30SO"
     cgmd_afcc_asset_id: str | None = None
 
     s2_sr_collection: str = "COPERNICUS/S2_SR_HARMONIZED"

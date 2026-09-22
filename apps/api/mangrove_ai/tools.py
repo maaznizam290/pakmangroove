@@ -124,7 +124,7 @@ def get_mangrove_timeseries(aoi_id: str | None = None, bbox: tuple | None = None
 
     return ToolResponse(
         data=[dict(r) for r in rows],
-        source=["projects/mangrovedatahub2_assets/CGMD-Extent30SO"],
+        source=[settings.cgmd_extent_asset_id],
         parameters=_aoi_kwargs(aoi_id, bbox),
         limitations=limitations,
     )
@@ -483,11 +483,19 @@ def generate_report(aoi_id: str | None = None, bbox: tuple | None = None, questi
 def get_model_metadata(task: str | None = None, version: str | None = None) -> ToolResponse:
     with get_session() as session:
         rows = session.execute(
-            text("""SELECT model_id, task, version, algorithm, metrics, feature_importance, promoted, trained_at
+            text("""SELECT model_id, task, version, algorithm, metrics, feature_importance, promoted, is_synthetic, trained_at
                      FROM models WHERE (CAST(:task AS text) IS NULL OR task = CAST(:task AS text))
                        AND (CAST(:version AS text) IS NULL OR version = CAST(:version AS text))
                      ORDER BY trained_at DESC"""),
             {"task": task, "version": version},
         ).mappings().all()
+
+    limitations = [] if rows else ["No models registered yet for this filter."]
+    if any(r["is_synthetic"] for r in rows):
+        limitations.append(
+            "One or more listed models has is_synthetic=true: trained on mangrove_ai.fixtures synthetic data as a "
+            "software smoke test only. Its metrics are NOT a scientific validation or production model performance "
+            "and it can never be promoted."
+        )
     return ToolResponse(data=[dict(r) for r in rows], source=["models"], parameters={"task": task, "version": version},
-                         limitations=[] if rows else ["No models registered yet for this filter."])
+                         limitations=limitations)

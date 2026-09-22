@@ -40,8 +40,18 @@ async function getJSON<T>(path: string, params: Record<string, string | number |
   return res.json();
 }
 
+export interface NamedAoi {
+  aoi_id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  bounds: Bbox;
+}
+
 export const api = {
   defaultAoi: () => getJSON<{ aoi_id: string; bounds: Bbox }>("/api/v1/aoi/default"),
+
+  listAois: () => getJSON<NamedAoi[]>("/api/v1/aoi/list"),
 
   restorationSuitability: (bbox?: Bbox, aoi_id?: string) =>
     getJSON<ToolResponse<{ run_id: string | null; cells: SuitabilityCell[] }>>(

@@ -116,10 +116,28 @@ def predict_proba(model, feature_df: pd.DataFrame) -> np.ndarray:
 
 
 if __name__ == "__main__":
+    from mangrove_ai.active_learning import register_candidate_model
     from mangrove_ai.fixtures import synthetic_band_pixels
+
+    print("SMOKE TEST ONLY — training on mangrove_ai.fixtures synthetic data. "
+          "These metrics are a software smoke test, not a scientific validation "
+          "or production model performance. Pakistan mangrove labels have not "
+          "been ingested; see mangrove_ai.labels for the real ingestion path.")
 
     df = synthetic_band_pixels(n=3000)
     split = int(len(df) * 0.7)
     train_df, val_df = df.iloc[:split], df.iloc[split:]
     _, result = train_and_evaluate(train_df, val_df, algorithm="random_forest")
     print(json.dumps({"metrics": result.metrics, "feature_importance": result.feature_importance}, indent=2))
+
+    model_id = register_candidate_model(
+        task="mangrove_classifier",
+        version=f"smoke-test-{result.algorithm}-v0",
+        algorithm=result.algorithm,
+        metrics=result.metrics,
+        feature_importance=result.feature_importance,
+        training_data_ref="mangrove_ai.fixtures.synthetic_band_pixels (SMOKE TEST — not real Pakistan mangrove labels)",
+        is_synthetic=True,
+        created_by="system",
+    )
+    print(f"Registered as candidate model {model_id} (is_synthetic=true, not promotable).")

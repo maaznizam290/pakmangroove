@@ -1,6 +1,6 @@
 import pytest
 
-from mangrove_ai.geo import AOITooLargeError, ensure_grid_cells, resolve_aoi
+from mangrove_ai.geo import AOITooLargeError, ensure_grid_cells, list_aois, resolve_aoi
 
 
 def test_resolve_aoi_with_explicit_bbox(small_bbox):
@@ -28,3 +28,16 @@ def test_ensure_grid_cells_materializes_and_is_idempotent(small_cells):
 def test_oversized_aoi_raises_before_touching_db():
     with pytest.raises(AOITooLargeError):
         ensure_grid_cells((66.85, 24.65, 67.45, 24.95))  # the full original Karachi coast bbox, ~2M cells
+
+
+def test_list_aois_includes_the_three_seeded_named_regions():
+    aois = list_aois()
+    names = {a["name"] for a in aois}
+    assert any("Bundal Island" in n for n in names)
+    assert any("Sandspit" in n for n in names)
+    assert any("Keti Bunder" in n or "Indus Delta" in n for n in names)
+    default_rows = [a for a in aois if a["is_default"]]
+    assert len(default_rows) == 1
+    for a in aois:
+        x0, y0, x1, y1 = a["bounds"]
+        assert x1 > x0 and y1 > y0

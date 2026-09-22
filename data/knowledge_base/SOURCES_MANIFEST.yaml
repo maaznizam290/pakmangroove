@@ -187,28 +187,44 @@
 
 - id: cgmd-extent30
   category: 08_Dataset_Documentation
-  title: "CGMD-Extent30 (Earth Engine asset projects/mangrovedatahub2_assets/CGMD-Extent30SO)"
-  authors: "unknown — CGMD dataset authors, to be filled at ingestion"
-  year: null
-  doi: null
-  source_url: "unknown — provide CGMD's own documentation/paper URL if available"
+  title: "CGMD-Extent30 — Continuous Global Mangrove Dynamics, annual mangrove extent (1984-2023), 30m, Landsat-derived"
+  authors: "Zhang, Z., Murray, N., Song, X. P., Bunting, P., Worthington, T., Fatoyinbo, L., et al."
+  year: 2026
+  doi: "10.5281/zenodo.20617284"
+  source_url: "https://zenodo.org/records/20617284 ; Earth Engine Data Catalog: projects/mangrovedatahub2/assets/CGMD-Extent30"
   usage: "Annual mangrove extent, 1984-2023, primary source for the temporal extent time series and change detection."
-  license: "unknown"
+  license: "unknown — confirm on the Zenodo record before redistribution"
   status: not_yet_uploaded
+  asset_id_note: >
+    The Earth Engine asset id previously configured in this project,
+    projects/mangrovedatahub2_assets/CGMD-Extent30SO, was confirmed NOT
+    accessible from a real GEE project (live query, Sept 2026). Web search
+    against Google's own Earth Engine Data Catalog listing and two
+    independent Zenodo records instead consistently gives
+    projects/mangrovedatahub2/assets/CGMD-Extent30 (no "SO" suffix,
+    "/assets/" not "_assets/") — apps/api/mangrove_ai/config.py has been
+    updated to this value. This was NOT confirmed by directly fetching the
+    catalog page itself (blocked by this sandbox's network egress policy)
+    — run one live `ee.data.getInfo('projects/mangrovedatahub2/assets/CGMD-Extent30')`
+    to fully confirm before treating this as authoritative.
 
 - id: cgmd-afcc30
   category: 08_Dataset_Documentation
-  title: "CGMD-AFCC30 (Earth Engine asset — annual fractional canopy cover, 1984-2023)"
-  authors: "unknown — CGMD dataset authors, to be filled at ingestion"
-  year: null
-  doi: null
-  source_url: "unknown — provide CGMD's own documentation/paper URL if available"
+  title: "CGMD-AFCC30 — Continuous Global Mangrove Dynamics, annual fractional canopy cover (1984-2023), 30m, Landsat-derived"
+  authors: "Zhang, Z., Murray, N., Song, X. P., Bunting, P., Worthington, T., Fatoyinbo, L., et al."
+  year: 2026
+  doi: "unknown — distributed across 4 period-split Zenodo records (1984-1992, 1993-2001, 2002-2011, 2012-2023); consolidated DOI not found"
+  source_url: "https://zenodo.org/records/18496588 (and 3 sibling period records); Earth Engine Data Catalog candidate: projects/mangrovedatahub2/assets/CGMD-AFCC30"
   usage: "Annual fractional canopy cover for canopy-dynamics/health analysis."
   license: "unknown"
   status: not_yet_uploaded
   asset_id_note: >
-    Per the build instructions: do not use "CGMD-AFCC305" unless that
-    asset is independently verified to exist. This registry uses the
-    dataset name "CGMD-AFCC30" and the concrete Earth Engine asset ID must
-    be confirmed against the CGMD data hub before the GEE client config
-    (apps/api/mangrove_ai/gee_client.py) is pointed at it.
+    Per the build instructions: do not use "CGMD-AFCC305" — that id was
+    never independently verified. Web search suggests the real asset is
+    projects/mangrovedatahub2/assets/CGMD-AFCC30, but
+    apps/api/mangrove_ai/config.py deliberately leaves
+    cgmd_afcc_asset_id unset until a live
+    `ee.data.getInfo('projects/mangrovedatahub2/assets/CGMD-AFCC30')` call
+    against a real GEE project confirms it — web search corroboration
+    alone is not treated as sufficient here, unlike CGMD-Extent30 where
+    the old id was already proven broken by a live query.

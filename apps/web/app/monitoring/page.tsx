@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import LimitationsNotice from "@/components/LimitationsNotice";
 
 interface ModelRow {
   model_id: string;
@@ -10,6 +11,7 @@ interface ModelRow {
   algorithm: string;
   metrics: Record<string, unknown>;
   promoted: boolean;
+  is_synthetic: boolean;
   trained_at: string;
 }
 
@@ -24,10 +26,14 @@ interface ReviewRow {
 
 export default function MonitoringPage() {
   const [models, setModels] = useState<ModelRow[]>([]);
+  const [modelLimitations, setModelLimitations] = useState<string[]>([]);
   const [queue, setQueue] = useState<ReviewRow[]>([]);
 
   useEffect(() => {
-    api.models().then((r) => setModels(r.data as ModelRow[]));
+    api.models().then((r) => {
+      setModels(r.data as ModelRow[]);
+      setModelLimitations(r.limitations);
+    });
     api.reviewQueue<ReviewRow>().then(setQueue);
   }, []);
 
@@ -41,8 +47,9 @@ export default function MonitoringPage() {
         </p>
       </div>
 
-      <div>
+      <div className="space-y-2">
         <h2 className="text-sm font-medium text-neutral-300 mb-2">Model registry</h2>
+        <LimitationsNotice limitations={modelLimitations} />
         {models.length ? (
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -57,7 +64,14 @@ export default function MonitoringPage() {
             <tbody>
               {models.map((m) => (
                 <tr key={m.model_id} className="border-b border-neutral-900">
-                  <td className="py-2 pr-4">{m.task}</td>
+                  <td className="py-2 pr-4">
+                    {m.task}
+                    {m.is_synthetic && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide bg-amber-950 text-amber-400 border border-amber-800 rounded px-1.5 py-0.5">
+                        smoke test only
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4">{m.version}</td>
                   <td className="py-2 pr-4">{m.algorithm}</td>
                   <td className="py-2 pr-4 text-neutral-400 text-xs">{JSON.stringify(m.metrics)}</td>

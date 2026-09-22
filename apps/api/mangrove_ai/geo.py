@@ -39,6 +39,30 @@ def _degrees_for_cell_size(lat: float) -> float:
 
 _RESOLVE_AOI_SQL = text("SELECT ST_AsGeoJSON(geom) AS geojson, ST_XMin(geom) x0, ST_YMin(geom) y0, ST_XMax(geom) x1, ST_YMax(geom) y1 FROM aois WHERE aoi_id = :aoi_id")
 _DEFAULT_AOI_SQL = text("SELECT aoi_id, ST_AsGeoJSON(geom) AS geojson, ST_XMin(geom) x0, ST_YMin(geom) y0, ST_XMax(geom) x1, ST_YMax(geom) y1 FROM aois WHERE is_default LIMIT 1")
+_LIST_AOIS_SQL = text(
+    """SELECT aoi_id, name, description, is_default,
+              ST_XMin(geom) x0, ST_YMin(geom) y0, ST_XMax(geom) x1, ST_YMax(geom) y1
+       FROM aois ORDER BY is_default DESC, name"""
+)
+
+
+def list_aois() -> list[dict]:
+    """Every seeded/named AOI (Bundal Island default + any other named
+    region, e.g. Sandspit / Keti Bunder — see db/migrations/099, 100),
+    for a frontend AOI picker. User-drawn custom bboxes never appear here
+    since they aren't persisted as `aois` rows."""
+    with get_session() as session:
+        rows = session.execute(_LIST_AOIS_SQL).mappings().all()
+    return [
+        {
+            "aoi_id": str(r["aoi_id"]),
+            "name": r["name"],
+            "description": r["description"],
+            "is_default": r["is_default"],
+            "bounds": (r["x0"], r["y0"], r["x1"], r["y1"]),
+        }
+        for r in rows
+    ]
 
 
 def resolve_aoi(aoi_id: str | None = None, bbox: tuple[float, float, float, float] | None = None) -> dict:

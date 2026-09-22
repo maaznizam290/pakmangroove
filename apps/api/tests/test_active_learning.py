@@ -46,7 +46,7 @@ def test_queue_rejects_invalid_reason(small_cells):
 
 
 def test_promote_refuses_system_or_hermes_as_promoter(cleanup_test_models):
-    model_id = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}v1", "RandomForest", {"f1": 0.7}, None, "synthetic_fixture")
+    model_id = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}v1", "RandomForest", {"f1": 0.7}, None, "real_training_labels_slice", is_synthetic=False)
     with pytest.raises(PermissionError):
         al.promote_model(model_id, "system", "should not be allowed")
     with pytest.raises(PermissionError):
@@ -54,7 +54,7 @@ def test_promote_refuses_system_or_hermes_as_promoter(cleanup_test_models):
 
 
 def test_promote_succeeds_with_real_human_identifier(cleanup_test_models):
-    model_id = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}v2", "RandomForest", {"f1": 0.7}, None, "synthetic_fixture")
+    model_id = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}v2", "RandomForest", {"f1": 0.7}, None, "real_training_labels_slice", is_synthetic=False)
     al.promote_model(model_id, "a.human.reviewer@example.com", "first model for this task")
 
     with get_session() as session:
@@ -63,13 +63,26 @@ def test_promote_succeeds_with_real_human_identifier(cleanup_test_models):
 
 
 def test_promote_refuses_to_demote_a_better_model(cleanup_test_models):
-    better = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}better", "RandomForest", {"f1": 0.9}, None, "synthetic_fixture")
+    better = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}better", "RandomForest", {"f1": 0.9}, None, "real_training_labels_slice", is_synthetic=False)
     al.promote_model(better, "a.human@example.com", "initial promotion")
 
-    worse = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}worse", "RandomForest", {"f1": 0.5}, None, "synthetic_fixture")
+    worse = al.register_candidate_model(TEST_TASK, f"{TEST_VERSION_PREFIX}worse", "RandomForest", {"f1": 0.5}, None, "real_training_labels_slice", is_synthetic=False)
     with pytest.raises(ValueError):
         al.promote_model(worse, "a.human@example.com", "attempt to regress")
 
     with get_session() as session:
         still_promoted = session.execute(text("SELECT model_id FROM models WHERE task = :t AND promoted = true"), {"t": TEST_TASK}).scalar()
     assert str(still_promoted) == better
+
+
+def test_promote_refuses_a_synthetic_candidate_regardless_of_promoter(cleanup_test_models):
+    model_id = al.register_candidate_model(
+        TEST_TASK, f"{TEST_VERSION_PREFIX}synthetic", "RandomForest", {"f1": 1.0}, None,
+        "mangrove_ai.fixtures.synthetic_band_pixels (SMOKE TEST)", is_synthetic=True,
+    )
+    with pytest.raises(PermissionError, match="synthetic"):
+        al.promote_model(model_id, "a.human.reviewer@example.com", "should never be allowed")
+
+    with get_session() as session:
+        promoted = session.execute(text("SELECT promoted FROM models WHERE model_id = :id"), {"id": model_id}).scalar()
+    assert promoted is False

@@ -65,17 +65,23 @@ def validate_review(review_id: str, label_class: str, validated_by: str) -> None
 
 def register_candidate_model(task: str, version: str, algorithm: str, metrics: dict,
                               feature_importance: dict | None, training_data_ref: str,
-                              created_by: str = "hermes_retrain_job") -> str:
+                              is_synthetic: bool, created_by: str = "hermes_retrain_job") -> str:
     """Writes a new, unpromoted candidate row. This is what Hermes/a retrain
-    job is allowed to do — promoted defaults to false."""
+    job is allowed to do — promoted defaults to false.
+
+    is_synthetic has no default on purpose: every caller must consciously
+    declare whether these metrics came from mangrove_ai.fixtures synthetic
+    data (a software smoke test, never a scientific result — see
+    mangrove_ai.models.baseline) or a real training_labels slice. A
+    synthetic row can never be promoted (see promote_model)."""
     with get_session() as session:
         model_id = session.execute(
-            text("""INSERT INTO models (task, version, algorithm, training_data_ref, metrics, feature_importance, created_by)
-                     VALUES (:task, :version, :algorithm, :training_data_ref, CAST(:metrics AS jsonb), CAST(:feature_importance AS jsonb), :created_by)
+            text("""INSERT INTO models (task, version, algorithm, training_data_ref, metrics, feature_importance, is_synthetic, created_by)
+                     VALUES (:task, :version, :algorithm, :training_data_ref, CAST(:metrics AS jsonb), CAST(:feature_importance AS jsonb), :is_synthetic, :created_by)
                      RETURNING model_id"""),
             {"task": task, "version": version, "algorithm": algorithm, "training_data_ref": training_data_ref,
              "metrics": __import__("json").dumps(metrics), "feature_importance": __import__("json").dumps(feature_importance or {}),
-             "created_by": created_by},
+             "is_synthetic": is_synthetic, "created_by": created_by},
         ).scalar()
     return str(model_id)
 
@@ -89,9 +95,14 @@ def promote_model(model_id: str, promoted_by: str, reason: str) -> None:
         raise PermissionError("Model promotion requires a real human identifier in promoted_by.")
 
     with get_session() as session:
-        candidate = session.execute(text("SELECT task, metrics FROM models WHERE model_id = :id"), {"id": model_id}).mappings().first()
+        candidate = session.execute(text("SELECT task, metrics, is_synthetic FROM models WHERE model_id = :id"), {"id": model_id}).mappings().first()
         if not candidate:
             raise ValueError(f"No model {model_id}")
+        if candidate["is_synthetic"]:
+            raise PermissionError(
+                "This candidate was trained on synthetic fixture data (a software smoke test, not a scientific "
+                "result) and can never be promoted, regardless of its metrics."
+            )
 
         current = session.execute(
             text("SELECT model_id, metrics FROM models WHERE task = :task AND promoted = true ORDER BY promoted_at DESC LIMIT 1"),

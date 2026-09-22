@@ -115,6 +115,13 @@ def get_default_aoi():
     return {"aoi_id": aoi["aoi_id"], "bounds": aoi["bounds"]}
 
 
+@router.get("/aoi/list")
+def list_aois():
+    from mangrove_ai.geo import list_aois as _list_aois
+
+    return _list_aois()
+
+
 @router.post("/hermes/ask", response_model=dict)
 def hermes_ask(payload: dict):
     from mangrove_ai.hermes.orchestrator import run as hermes_run
