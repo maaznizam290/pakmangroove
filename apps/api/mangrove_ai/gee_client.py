@@ -98,18 +98,33 @@ class GEEClient:
         masked = ee.ImageCollection(joined).map(_mask)
         return masked.median().clip(aoi)
 
+    # GEE hard-aborts a synchronous reduceRegions().getInfo() call once its
+    # computation graph accumulates over 5000 elements — confirmed against
+    # this composite's actual join+cloud-mask+median graph (4000 succeeds,
+    # the full unbatched call on a 6468-cell AOI fails). Chunking here keeps
+    # every batch under that ceiling regardless of AOI size up to
+    # mangrove_ai.geo.MAX_SYNC_CELLS.
+    _REDUCE_REGIONS_BATCH_SIZE = 4000
+
     def sample_bands_at_cells(self, composite, cell_points_geojson: list[dict]) -> list[dict]:
         """Reduce the composite to band values at a list of cell centroids.
-        Real GEE reduceRegion calls, one FeatureCollection round trip."""
+        Real GEE reduceRegion calls, chunked into multiple FeatureCollection
+        round trips to stay under GEE's per-call element cap."""
         self._ensure_initialized()
         import ee
 
-        fc = ee.FeatureCollection([ee.Feature(ee.Geometry(g), {"idx": i}) for i, g in enumerate(cell_points_geojson)])
         bands = list(_S2_BAND_MAP.values())
-        sampled = composite.select(bands).reduceRegions(
-            collection=fc, reducer=ee.Reducer.mean(), scale=10
-        )
-        return sampled.getInfo()["features"]
+        selected = composite.select(bands)
+        batch_size = self._REDUCE_REGIONS_BATCH_SIZE
+        features: list[dict] = []
+        for start in range(0, len(cell_points_geojson), batch_size):
+            chunk = cell_points_geojson[start:start + batch_size]
+            fc = ee.FeatureCollection(
+                [ee.Feature(ee.Geometry(g), {"idx": start + i}) for i, g in enumerate(chunk)]
+            )
+            sampled = selected.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=10)
+            features.extend(sampled.getInfo()["features"])
+        return features
 
 
 gee_client = GEEClient()
