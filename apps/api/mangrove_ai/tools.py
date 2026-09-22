@@ -16,9 +16,10 @@ from sqlalchemy import text
 from mangrove_ai.change import classify_extent_change
 from mangrove_ai.config import settings
 from mangrove_ai.db import get_session
-from mangrove_ai.gee_client import CompositeRequest, GEENotConfiguredError, gee_client
+from mangrove_ai.gee_client import GEENotConfiguredError, gee_client
 from mangrove_ai.geo import AOITooLargeError, ensure_grid_cells, resolve_aoi
 from mangrove_ai.health import canopy_condition_indicator
+from mangrove_ai.pipeline import materialize_composite
 from mangrove_ai.rag import router as rag_router
 from mangrove_ai.risk_evidence import local_risk_evidence_batch
 from mangrove_ai.schemas import ToolResponse
@@ -42,7 +43,6 @@ def _safe_ensure_grid_cells(bounds) -> tuple[list[dict], str | None]:
 def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
                     period_start: str | None = None, period_end: str | None = None,
                     composite_type: str = "annual") -> ToolResponse:
-    aoi = resolve_aoi(aoi_id, bbox)
     params = {**_aoi_kwargs(aoi_id, bbox), "period_start": period_start, "period_end": period_end, "composite_type": composite_type}
 
     if not gee_client.is_configured:
@@ -56,20 +56,27 @@ def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
 
     from datetime import date
 
-    request = CompositeRequest(
-        aoi_geojson=__import__("json").loads(aoi["geojson_str"]),
-        period_start=date.fromisoformat(period_start) if period_start else date(2023, 1, 1),
-        period_end=date.fromisoformat(period_end) if period_end else date(2023, 12, 31),
-        composite_type=composite_type,
-    )
     try:
-        composite = gee_client.build_annual_composite(request)
+        # Real build -> sample -> spectral-index materialization, so this
+        # tool call is what makes calculate_health_indicators have real
+        # rows to read for the same AOI, not just a composite existence
+        # check (see mangrove_ai.pipeline.materialize_composite).
+        result = materialize_composite(
+            aoi_id=aoi_id,
+            bbox=bbox,
+            period_start=date.fromisoformat(period_start) if period_start else None,
+            period_end=date.fromisoformat(period_end) if period_end else None,
+            composite_type=composite_type,
+        )
+        limitations = []
+        if result["cell_count"] and not result["cells_with_data"]:
+            limitations.append("Composite built but every sampled grid cell returned no valid pixel for this period (cloud cover or scene gaps) — no spectral_index_values rows were written.")
         return ToolResponse(
-            data={"composite_ready": True, "ee_object_repr": str(composite)},
+            data=result,
             source=[settings.s2_sr_collection, settings.s2_cloud_prob_collection],
             parameters=params,
             confidence=None,
-            limitations=[],
+            limitations=limitations,
         )
     except GEENotConfiguredError as e:
         return ToolResponse(data=None, source=[settings.s2_sr_collection], parameters=params, limitations=[str(e)])
