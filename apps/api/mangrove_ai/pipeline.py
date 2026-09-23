@@ -41,6 +41,59 @@ _UPSERT_INDEX_VALUE_SQL = text(
        ON CONFLICT (cell_id, composite_id, index_name) DO UPDATE SET value = EXCLUDED.value"""
 )
 
+# Idempotency check: a composite already materialized for this exact named
+# AOI/period/type has its indices already sitting in spectral_index_values —
+# reuse it instead of re-hitting the live (quota-limited, slow) GEE API.
+# Scoped to aoi_id, not bbox: an arbitrary drawn bbox has no stable identity
+# to cache against in sentinel2_composites (which only stores aoi_id), so
+# only named-AOI calls (the default/seeded AOIs the frontend actually
+# repeats) get this fast path.
+_FIND_EXISTING_COMPOSITE_SQL = text(
+    """SELECT composite_id FROM sentinel2_composites
+       WHERE aoi_id = :aoi_id AND period_start = :period_start AND period_end = :period_end
+         AND composite_type = :composite_type
+       ORDER BY computed_at DESC LIMIT 1"""
+)
+
+_CACHED_INDEX_VALUE_COUNTS_SQL = text(
+    """SELECT index_name, count(DISTINCT cell_id) AS cell_count, count(*) AS row_count
+       FROM spectral_index_values
+       WHERE composite_id = :composite_id AND cell_id = ANY(:cell_ids)
+       GROUP BY index_name"""
+)
+
+
+def _try_cached_composite(
+    aoi_id: str, period_start: date, period_end: date, composite_type: str,
+    cell_ids: list[int], cell_count: int,
+) -> dict | None:
+    """Returns a materialize_composite-shaped summary reusing an existing
+    sentinel2_composites row for this exact AOI/period/type if one already
+    has spectral_index_values rows covering this AOI's current cells, else
+    None (caller proceeds to build a fresh composite via GEE)."""
+    with get_session() as session:
+        existing_id = session.execute(_FIND_EXISTING_COMPOSITE_SQL, {
+            "aoi_id": aoi_id, "period_start": period_start, "period_end": period_end,
+            "composite_type": composite_type,
+        }).scalar()
+        if not existing_id:
+            return None
+        counts = session.execute(_CACHED_INDEX_VALUE_COUNTS_SQL, {
+            "composite_id": existing_id, "cell_ids": cell_ids,
+        }).mappings().all()
+
+    if not counts:
+        return None
+
+    return {
+        "composite_id": str(existing_id),
+        "cell_count": cell_count,
+        "cells_with_data": max(row["cell_count"] for row in counts),
+        "indices_written": sum(row["row_count"] for row in counts),
+        "indices_computed": [row["index_name"] for row in counts],
+        "cached": True,
+    }
+
 
 def materialize_composite(
     aoi_id: str | None = None,
@@ -70,10 +123,19 @@ def materialize_composite(
     if not cells:
         return {"composite_id": None, "cell_count": 0, "cells_with_data": 0, "indices_written": 0, "indices_computed": []}
 
+    resolved_period_start = period_start or date(2023, 1, 1)
+    resolved_period_end = period_end or date(2023, 12, 31)
+    cell_ids = [c["cell_id"] for c in cells]
+
+    if aoi["aoi_id"]:
+        cached = _try_cached_composite(aoi["aoi_id"], resolved_period_start, resolved_period_end, composite_type, cell_ids, len(cells))
+        if cached is not None:
+            return cached
+
     request = CompositeRequest(
         aoi_geojson=json.loads(aoi["geojson_str"]),
-        period_start=period_start or date(2023, 1, 1),
-        period_end=period_end or date(2023, 12, 31),
+        period_start=resolved_period_start,
+        period_end=resolved_period_end,
         composite_type=composite_type,
     )
     composite = gee_client.build_annual_composite(request)
@@ -96,7 +158,6 @@ def materialize_composite(
         ).scalar()
 
     band_codes = list(_S2_BAND_MAP.values())
-    cell_ids = [c["cell_id"] for c in cells]
     raw_bands: dict[str, list[float | None]] = {code: [] for code in band_codes}
     for i in range(len(cells)):
         props = by_idx.get(i, {})

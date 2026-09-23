@@ -19,6 +19,8 @@ _AOI_PROPS = {
 TOOL_SPECS: list[dict] = [
     {"name": "query_sentinel", "description": "Filter/cloud-mask/composite Sentinel-2 SR imagery for an AOI and period.",
      "input_schema": {"type": "object", "properties": {**_AOI_PROPS, "period_start": {"type": "string"}, "period_end": {"type": "string"}, "composite_type": {"type": "string", "enum": ["annual", "seasonal", "monthly"]}}}},
+    {"name": "get_map_layer", "description": "Real GEE-hosted XYZ tile URL for a Sentinel-2 composite visualization (true_color | false_color | ndvi | ndwi | mndwi) for an AOI/period, ready to add to a map.",
+     "input_schema": {"type": "object", "properties": {**_AOI_PROPS, "period_start": {"type": "string"}, "period_end": {"type": "string"}, "composite_type": {"type": "string", "enum": ["annual", "seasonal", "monthly"]}, "layer": {"type": "string", "enum": ["true_color", "false_color", "ndvi", "ndwi", "mndwi"]}}}},
     {"name": "get_mangrove_map", "description": "Per-cell current mangrove probability/classification for an AOI/year.",
      "input_schema": {"type": "object", "properties": {**_AOI_PROPS, "year": {"type": "integer"}}}},
     {"name": "get_mangrove_timeseries", "description": "Annual mangrove extent gain/loss/net time series (CGMD-Extent30) for an AOI.",
@@ -58,6 +60,7 @@ def _bbox_tuple(args: dict) -> tuple | None:
 
 TOOL_DISPATCH = {
     "query_sentinel": lambda a: _tools.query_sentinel(a.get("aoi_id"), _bbox_tuple(a), a.get("period_start"), a.get("period_end"), a.get("composite_type", "annual")),
+    "get_map_layer": lambda a: _tools.get_map_layer(a.get("aoi_id"), _bbox_tuple(a), a.get("period_start"), a.get("period_end"), a.get("composite_type", "annual"), a.get("layer", "true_color")),
     "get_mangrove_map": lambda a: _tools.get_mangrove_map(a.get("aoi_id"), _bbox_tuple(a), a.get("year")),
     "get_mangrove_timeseries": lambda a: _tools.get_mangrove_timeseries(a.get("aoi_id"), _bbox_tuple(a)),
     "query_gmw": lambda a: _tools.query_gmw(a.get("aoi_id"), _bbox_tuple(a)),

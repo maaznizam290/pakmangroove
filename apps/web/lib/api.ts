@@ -26,6 +26,13 @@ export interface SuitabilityCell {
 
 export type Bbox = [number, number, number, number];
 
+export type GeeLayer = "true_color" | "false_color" | "ndvi" | "ndwi" | "mndwi";
+
+export interface MapLayerResult {
+  tile_url: string;
+  layer: GeeLayer;
+}
+
 function bboxParam(bbox?: Bbox) {
   return bbox ? bbox.join(",") : undefined;
 }
@@ -81,6 +88,11 @@ export const api = {
   healthIndicators: (bbox?: Bbox) => getJSON<ToolResponse>("/api/v1/mangrove/health", { bbox: bboxParam(bbox) }),
 
   sentinel: (bbox?: Bbox) => getJSON<ToolResponse>("/api/v1/mangrove/sentinel", { bbox: bboxParam(bbox) }),
+
+  mapLayer: (bbox: Bbox | undefined, layer: GeeLayer, period_start?: string, period_end?: string) =>
+    getJSON<ToolResponse<MapLayerResult>>("/api/v1/mangrove/layers", {
+      bbox: bboxParam(bbox), layer, period_start, period_end,
+    }),
 
   forecast: (bbox?: Bbox, horizon_year?: number, model_type?: string) =>
     getJSON<ToolResponse>("/api/v1/mangrove/forecast", { bbox: bboxParam(bbox), horizon_year, model_type }),

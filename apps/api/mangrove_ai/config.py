@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     s2_cloud_prob_collection: str = "COPERNICUS/S2_CLOUD_PROBABILITY"
     s2_cloud_prob_max: float = 40.0
 
+    # Sentinel-1 GRD — collection id only, for when mangrove_ai.sentinel1_client
+    # gains a real implementation (see that module's docstring for why it
+    # doesn't yet: no validated SAR-based mangrove methodology is wired into
+    # mangrove_ai.indices). Configurable here rather than hardcoded so the
+    # eventual implementation doesn't need another settings-file change.
+    s1_grd_collection: str = "COPERNICUS/S1_GRD"
+
     # --- RAG ---
     rag_backend: str = "pgvector_fallback"  # "ragflow" | "pgvector_fallback"
     ragflow_base_url: str | None = None

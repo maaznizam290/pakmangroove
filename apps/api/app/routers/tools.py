@@ -28,6 +28,13 @@ def query_sentinel(aoi_id: str | None = None, bbox: str | None = Query(None),
     return tools.query_sentinel(aoi_id, _bbox(bbox), period_start, period_end, composite_type)
 
 
+@router.get("/mangrove/layers", response_model=ToolResponse)
+def get_map_layer(aoi_id: str | None = None, bbox: str | None = Query(None),
+                   period_start: str | None = None, period_end: str | None = None,
+                   composite_type: str = "annual", layer: str = "true_color"):
+    return tools.get_map_layer(aoi_id, _bbox(bbox), period_start, period_end, composite_type, layer)
+
+
 @router.get("/mangrove/map", response_model=ToolResponse)
 def get_mangrove_map(aoi_id: str | None = None, bbox: str | None = Query(None), year: int | None = None):
     return tools.get_mangrove_map(aoi_id, _bbox(bbox), year)

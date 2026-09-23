@@ -10,13 +10,16 @@ Hermes calls these tools; it never computes a geospatial result itself
 
 from __future__ import annotations
 
+import json
+from datetime import date
+
 import numpy as np
 from sqlalchemy import text
 
 from mangrove_ai.change import classify_extent_change
 from mangrove_ai.config import settings
 from mangrove_ai.db import get_session
-from mangrove_ai.gee_client import GEENotConfiguredError, gee_client
+from mangrove_ai.gee_client import CompositeRequest, GEENotConfiguredError, SUPPORTED_MAP_LAYERS, gee_client
 from mangrove_ai.geo import AOITooLargeError, ensure_grid_cells, resolve_aoi
 from mangrove_ai.health import canopy_condition_indicator
 from mangrove_ai.pipeline import materialize_composite
@@ -93,6 +96,54 @@ def query_sentinel(aoi_id: str | None = None, bbox: tuple | None = None,
         return ToolResponse(
             data=None, source=[settings.s2_sr_collection, settings.s2_cloud_prob_collection], parameters=params,
             limitations=[f"Live Sentinel-2 query failed: {type(e).__name__}: {e}"],
+        )
+
+
+def get_map_layer(aoi_id: str | None = None, bbox: tuple | None = None,
+                   period_start: str | None = None, period_end: str | None = None,
+                   composite_type: str = "annual", layer: str = "true_color") -> ToolResponse:
+    """Builds the same real Sentinel-2 composite as query_sentinel, then
+    returns a real GEE-hosted XYZ tile URL (gee_client.get_map_layer) for
+    one visualization of it — true/false color or a live ee.Image-side
+    spectral index. No raster is computed or stored here; the frontend
+    fetches tiles directly from Google's tile servers using the returned
+    URL template, so this call stays cheap regardless of AOI size."""
+    params = {**_aoi_kwargs(aoi_id, bbox), "period_start": period_start, "period_end": period_end,
+              "composite_type": composite_type, "layer": layer}
+
+    if layer not in SUPPORTED_MAP_LAYERS:
+        return ToolResponse(
+            data=None, source=[settings.s2_sr_collection], parameters=params,
+            limitations=[f"Unknown layer '{layer}' — supported: {', '.join(SUPPORTED_MAP_LAYERS)}"],
+        )
+
+    if not gee_client.is_configured:
+        return ToolResponse(
+            data=None, source=[settings.s2_sr_collection], parameters=params,
+            limitations=["GEE credentials not configured in this deployment — no live tile layer was generated. This is not a fabricated result."],
+        )
+
+    try:
+        aoi = resolve_aoi(aoi_id, bbox)
+        request = CompositeRequest(
+            aoi_geojson=json.loads(aoi["geojson_str"]),
+            period_start=date.fromisoformat(period_start) if period_start else date(2023, 1, 1),
+            period_end=date.fromisoformat(period_end) if period_end else date(2023, 12, 31),
+            composite_type=composite_type,
+        )
+        composite = gee_client.build_annual_composite(request)
+        result = gee_client.get_map_layer(composite, layer)
+        return ToolResponse(
+            data=result, source=[settings.s2_sr_collection, settings.s2_cloud_prob_collection],
+            parameters=params, limitations=[],
+        )
+    except GEENotConfiguredError as e:
+        return ToolResponse(data=None, source=[settings.s2_sr_collection], parameters=params, limitations=[str(e)])
+    except Exception as e:
+        # Same honest-limitation-not-a-500 contract as query_sentinel.
+        return ToolResponse(
+            data=None, source=[settings.s2_sr_collection, settings.s2_cloud_prob_collection], parameters=params,
+            limitations=[f"Live map layer generation failed: {type(e).__name__}: {e}"],
         )
 
 

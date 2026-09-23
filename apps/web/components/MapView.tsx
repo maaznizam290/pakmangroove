@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { api, type Bbox, type SuitabilityCell } from "@/lib/api";
+import { api, type Bbox, type GeeLayer, type SuitabilityCell } from "@/lib/api";
 import CellDetailPanel from "./CellDetailPanel";
 import LimitationsNotice from "./LimitationsNotice";
 
@@ -23,6 +23,16 @@ const LAYER_LABELS: Record<LayerKey, string> = {
   gmw_baseline: "GMW v4 Baseline Extent",
   gbif: "GBIF Observations",
 };
+
+const GEE_LAYER_LABELS: Record<GeeLayer, string> = {
+  true_color: "True Color",
+  false_color: "False Color",
+  ndvi: "NDVI",
+  ndwi: "NDWI",
+  mndwi: "MNDWI",
+};
+
+const GEE_TILE_SOURCE_ID = "gee-tile-layer";
 
 // A minimal, self-contained style (no external fetch) rather than a
 // hosted basemap URL. MapLibre's own `load` event — which every data
@@ -57,6 +67,9 @@ export default function MapView({
   const [selectedCell, setSelectedCell] = useState<SuitabilityCell | null>(null);
   const [limitations, setLimitations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [geeLayer, setGeeLayer] = useState<GeeLayer | "">("");
+  const [geeLoading, setGeeLoading] = useState(false);
+  const [geeLimitations, setGeeLimitations] = useState<string[]>([]);
 
   useEffect(() => {
     api.defaultAoi().then((aoi) => setBbox(aoi.bounds));
@@ -176,6 +189,72 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bbox, visible]);
 
+  function upsertRasterLayer(map: maplibregl.Map, tileUrl: string) {
+    if (map.getLayer(GEE_TILE_SOURCE_ID)) map.removeLayer(GEE_TILE_SOURCE_ID);
+    if (map.getSource(GEE_TILE_SOURCE_ID)) map.removeSource(GEE_TILE_SOURCE_ID);
+    map.addSource(GEE_TILE_SOURCE_ID, { type: "raster", tiles: [tileUrl], tileSize: 256 });
+    // Insert right above the background so DB-backed vector layers stay on top.
+    const beforeId = map.getStyle().layers?.[1]?.id;
+    map.addLayer(
+      { id: GEE_TILE_SOURCE_ID, type: "raster", source: GEE_TILE_SOURCE_ID, paint: { "raster-opacity": 0.85 } },
+      beforeId
+    );
+  }
+
+  function removeRasterLayer(map: maplibregl.Map) {
+    if (map.getLayer(GEE_TILE_SOURCE_ID)) map.removeLayer(GEE_TILE_SOURCE_ID);
+    if (map.getSource(GEE_TILE_SOURCE_ID)) map.removeSource(GEE_TILE_SOURCE_ID);
+  }
+
+  // Real Earth Engine raster tiles (true/false color, NDVI, NDWI, MNDWI) —
+  // separate from the DB-backed vector layers above. api.mapLayer builds a
+  // live Sentinel-2 composite server-side and returns a GEE-hosted tile URL
+  // template; the browser then fetches tiles directly from Google, so this
+  // component never sees GEE credentials.
+  useEffect(() => {
+    if (!mapRef.current || !bbox) return;
+    const map = mapRef.current;
+    let cancelled = false;
+
+    async function loadGeeLayer() {
+      if (!geeLayer) {
+        removeRasterLayer(map);
+        setGeeLimitations([]);
+        return;
+      }
+      setGeeLoading(true);
+      try {
+        const resp = await api.mapLayer(bbox!, geeLayer);
+        if (cancelled) return;
+        if (resp.data?.tile_url) {
+          upsertRasterLayer(map, resp.data.tile_url);
+        } else {
+          removeRasterLayer(map);
+        }
+        setGeeLimitations(resp.limitations);
+      } catch (e) {
+        if (!cancelled) {
+          removeRasterLayer(map);
+          setGeeLimitations([String(e)]);
+        }
+      } finally {
+        if (!cancelled) setGeeLoading(false);
+      }
+    }
+
+    if (map.isStyleLoaded()) {
+      loadGeeLayer().catch((e) => console.error("MapView: failed to load GEE layer", e));
+    } else {
+      map.once("load", () => {
+        loadGeeLayer().catch((e) => console.error("MapView: failed to load GEE layer", e));
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bbox, geeLayer]);
+
   function upsertLayer(
     map: maplibregl.Map,
     id: LayerKey,
@@ -222,12 +301,29 @@ export default function MapView({
           </label>
         ))}
         {loading && <div className="text-neutral-500 text-xs pt-1">Loading…</div>}
+
+        <div className="text-neutral-400 text-xs uppercase tracking-wide mt-3 mb-1 border-t border-neutral-700 pt-2">
+          Earth Engine
+        </div>
+        <select
+          className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
+          value={geeLayer}
+          onChange={(e) => setGeeLayer(e.target.value as GeeLayer | "")}
+        >
+          <option value="">None</option>
+          {(Object.keys(GEE_LAYER_LABELS) as GeeLayer[]).map((key) => (
+            <option key={key} value={key}>
+              {GEE_LAYER_LABELS[key]}
+            </option>
+          ))}
+        </select>
+        {geeLoading && <div className="text-neutral-500 text-xs pt-1">Building live composite…</div>}
       </div>
 
       {selectedCell && <CellDetailPanel cell={selectedCell} onClose={() => setSelectedCell(null)} />}
 
       <div className="absolute bottom-4 left-4 right-4 z-10">
-        <LimitationsNotice limitations={limitations} />
+        <LimitationsNotice limitations={Array.from(new Set([...limitations, ...geeLimitations]))} />
       </div>
     </div>
   );
